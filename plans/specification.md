@@ -1,43 +1,43 @@
-# Specyfikacja zmian – Putka, plan produkcji
+# Change specification – Putka, production plan
 
-Lista funkcjonalności i zmian potrzebnych do realizacji zadań 1–7 z `README.md`.
-Bonus (eksport CSV w tle albo cache w Redisie) jest poza zakresem.
+List of features and changes needed to complete tasks 1–7 from `README.md`.
+The bonus (background CSV export or a Redis cache) is out of scope.
 
-## 0. Stan wyjściowy (sprawdzony w kodzie)
+## 0. Starting point (checked in the code)
 
-- `backend/app/models.py`: tylko `Store` i `Product` (`active`, `unit_price: Numeric(10, 2)`, `category` z indeksem). Brak tabel zamówień.
-- `backend/app/main.py`: `/health`, `/stores`, `/products`. Endpointy są synchroniczne (`def`), sesja przez `db: Session = Depends(get_db)` (bez `Annotated`).
-- `backend/app/cutoff.py`: `CUTOFF_TIME_UTC = time(12, 0)`, czyli stała godzina w UTC.
-- `backend/tests/`: `conftest.py` (SQLite w pamięci, fixture'y `db` i `client`), `test_cutoff.py`, `test_products.py`.
-- Frontend: `App.tsx` + `ProductList.tsx`. `fetchJson<T>` rzutuje odpowiedź bez walidacji, Zod nie jest zainstalowany.
-- `docker-compose.yml`: jest serwis `redis` i `REDIS_URL` w kontenerze backendu. Kod z niego nie korzysta i w tym zakresie go nie ruszamy.
+- `backend/app/models.py`: only `Store` and `Product` (`active`, `unit_price: Numeric(10, 2)`, `category` with an index). No order tables.
+- `backend/app/main.py`: `/health`, `/stores`, `/products`. Endpoints are synchronous (`def`), session via `db: Session = Depends(get_db)` (no `Annotated`).
+- `backend/app/cutoff.py`: `CUTOFF_TIME_UTC = time(12, 0)`, a fixed hour in UTC.
+- `backend/tests/`: `conftest.py` (in-memory SQLite, `db` and `client` fixtures), `test_cutoff.py`, `test_products.py`.
+- Frontend: `App.tsx` + `ProductList.tsx`. `fetchJson<T>` casts the response without validation. Zod is not installed.
+- `docker-compose.yml`: a `redis` service and `REDIS_URL` in the backend container. The code does not use it, and we do not touch that part.
 
-## Decyzje do podjęcia przed implementacją
+## Decisions to make before implementation
 
-- [x] Nowa zależność frontendu: `zod` (wymagana przez `AGENTS.md`).
-- [x] Zmiany w szkielecie: podział `backend/app/` na `api/`, `services/` i moduły wspólne (sekcja „Układ pakietu”).
-- [ ] Kontrakt `POST /orders` (sekcja 2).
-- [ ] Kody błędów: 404 dla brakującego sklepu lub produktu, 422 dla naruszenia reguły biznesowej i dla złego payloadu (alternatywa: 409 dla reguł biznesowych).
-- [ ] Czy dopuszczamy kilka zamówień jednego sklepu na ten sam dzień (domyślnie tak, bez `UNIQUE(store_id, delivery_date)`).
-- [ ] Które produkty pokazuje plan: wszystkie aktywne oraz nieaktywne, ale tylko jeśli mają zamówienia na daną datę (rekomendacja), czy po prostu wszystkie.
-- [x] Formularz zamówienia w React: pomijamy.
+- [x] New frontend dependency: `zod` (required by `AGENTS.md`).
+- [x] Skeleton changes: split `backend/app/` into `api/`, `services/`, and shared modules (section "Package layout").
+- [x] `POST /orders` contract (section 2).
+- [x] Error codes: 404 for a missing store or product, 422 for a business-rule violation and for a bad payload (alternative: 409 for business rules).
+- [x] Whether one store may place several orders for the same day (default: yes, no `UNIQUE(store_id, delivery_date)`).
+- [x] Which products the plan shows: every active product (including quantity 0), and an inactive product only when it has orders for that date. An inactive product with no orders for that date is left out of the plan.
+- [x] Order form in React: skip it.
 
-## Układ pakietu `backend/app`
+## Package layout `backend/app`
 
-Dziś w katalogu leży wszystko obok siebie: trasy, modele, schematy, seed i cutoff. Dopisanie `orders.py`, `plan.py`, `errors.py` i `clock.py` obok nich miesza trasy z logiką. Docelowy układ rozdziela trzy rzeczy i nie idzie głębiej.
+Today everything sits side by side in the directory: routes, models, schemas, seed, and cutoff. Adding `orders.py`, `plan.py`, `errors.py`, and `clock.py` next to them mixes routes with logic. The target layout separates three things and does not go deeper.
 
 ```text
 backend/app/
-  main.py            # aplikacja, lifespan, CORS, handlery błędów, include_router
+  main.py            # app, lifespan, CORS, error handlers, include_router
   db.py              # engine, SessionLocal, Base, get_db
   models.py          # Store, Product, Order, OrderItem
-  schemas.py         # wszystkie *In i *Out
+  schemas.py         # all *In and *Out
   seed.py
   errors.py          # DomainError, NotFoundError, BusinessRuleError
   clock.py           # Europe/Warsaw, get_now, cutoff_for, is_before_cutoff
   api/
-    deps.py          # DbSession i Now: aliasy Annotated[..., Depends(...)]
-    catalog.py       # GET /stores, GET /products (wyniesione z main.py)
+    deps.py          # DbSession and Now: Annotated[..., Depends(...)] aliases
+    catalog.py       # GET /stores, GET /products (moved out of main.py)
     orders.py        # POST /orders
     plan.py          # GET /production-plan
   services/
@@ -45,12 +45,12 @@ backend/app/
     plan.py          # build_plan
 ```
 
-- **Trasy są cienkie.** `APIRouter` bez prefiksu, więc adresy zostają `/orders` i `/production-plan`. Router tylko przyjmuje schemat, woła funkcję z `services/` i zwraca `*Out`.
-- **Logika nie importuje FastAPI.** `services/` dostaje `Session`, payload i `now`. Testy mogą wołać `create_order` i `build_plan` bez HTTP, a testy endpointów dalej idą przez `client`.
-- **Modele i schematy zostają w jednym pliku każdy.** Jest ich mało, a plan i zamówienia korzystają z tych samych klas. Rozbicie na pakiet per domena dawałoby te same pliki plus importy w kółko.
-- **Czas jest w `clock.py`.** `cutoff.py` przechodzi tam w całości (poprawka z sekcji 3 plus `get_now`). Testy zmieniają import z `app.cutoff` na `app.clock`. Osobny `clock.py` obok `cutoff.py` dublowałby strefę czasową.
-- **`create_all` widzi nowe tabele.** `main.py` importuje routery przy starcie modułu, routery importują serwisy, serwisy importują modele. `Order` i `OrderItem` są wtedy zarejestrowane na `Base` zanim `lifespan` wywoła `create_all`.
-- **Czego nie robimy:** warstwy repozytoriów, pakietu per tabela, Alembica.
+- **Routes stay thin.** `APIRouter` has no prefix, so the paths remain `/orders` and `/production-plan`. A router only accepts a schema, calls a function from `services/`, and returns `*Out`.
+- **Logic does not import FastAPI.** `services/` receives a `Session`, the payload, and `now`. Tests can call `create_order` and `build_plan` without HTTP, and endpoint tests still go through `client`.
+- **Models and schemas each stay in one file.** There are few of them, and the plan and orders use the same classes. A package per domain would be the same files plus imports in a circle.
+- **Time lives in** `clock.py`. `cutoff.py` moves there in full (the section 3 fix plus `get_now`). Tests change the import from `app.cutoff` to `app.clock`. A separate `clock.py` next to `cutoff.py` would duplicate the time zone.
+- `create_all` **sees the new tables.** `main.py` imports the routers when the module loads, routers import services, services import models. `Order` and `OrderItem` are then registered on `Base` before `lifespan` calls `create_all`.
+- **What we do not do:** a repository layer, a package per table, Alembic.
 
 `deps.py`:
 
@@ -59,50 +59,50 @@ DbSession = Annotated[Session, Depends(get_db)]
 Now = Annotated[datetime, Depends(get_now)]
 ```
 
-`app.dependency_overrides[get_now]` dalej działa, bo alias wskazuje na tę samą funkcję.
+`app.dependency_overrides[get_now]` still works, because the alias points at the same function.
 
 ---
 
-## 1. Model zamówień (zadanie 1)
+## 1. Order model (task 1)
 
-**Pliki:** `backend/app/models.py`, `backend/app/db.py`
+**Files:** `backend/app/models.py`, `backend/app/db.py`
 
-### 1.1 Tabela `orders` (`Order`)
+### 1.1 Table `orders` (`Order`)
 
-- `id: Mapped[int]`, klucz główny.
+- `id: Mapped[int]`, primary key.
 - `store_id: Mapped[int]`, `ForeignKey("stores.id")`, `nullable=False`.
-- `delivery_date: Mapped[date]`, `index=True`. Plan produkcji filtruje po tej kolumnie.
-- `created_at: Mapped[datetime]`, `DateTime(timezone=True)`. Wartość pochodzi ze wstrzykniętego "now", a nie z `server_default`, żeby dało się ją ustawić w testach.
-- Relacja `items: Mapped[list["OrderItem"]]` z `cascade="all, delete-orphan"`, dzięki czemu zamówienie i pozycje zapisuje jeden `db.add(order)`.
+- `delivery_date: Mapped[date]`, `index=True`. The production plan filters on this column.
+- `created_at: Mapped[datetime]`, `DateTime(timezone=True)`. The value comes from the injected "now", not from `server_default`, so tests can set it.
+- Relationship `items: Mapped[list["OrderItem"]]` with `cascade="all, delete-orphan"`, so one `db.add(order)` saves the order and its lines.
 
-### 1.2 Tabela `order_items` (`OrderItem`)
+### 1.2 Table `order_items` (`OrderItem`)
 
-- `id`, `order_id` (`ForeignKey("orders.id", ondelete="CASCADE")`), `product_id` (`ForeignKey("products.id")`). Wszystkie `nullable=False`.
+- `id`, `order_id` (`ForeignKey("orders.id", ondelete="CASCADE")`), `product_id` (`ForeignKey("products.id")`). All `nullable=False`.
 - `quantity: Mapped[int]`.
-- `unit_price: Mapped[Decimal]`, `Numeric(10, 2)`. Cena jest kopiowana z `Product.unit_price` w chwili zamówienia, więc późniejsza zmiana cennika nie zmienia historii.
+- `unit_price: Mapped[Decimal]`, `Numeric(10, 2)`. The price is copied from `Product.unit_price` at order time, so a later price-list change does not rewrite history.
 - `__table_args__`:
   - `CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive")`,
-  - `UniqueConstraint("order_id", "product_id", name="uq_order_items_order_product")`, czyli jeden produkt raz na zamówienie.
-- Indeks na `product_id` (wiersze są złączane po nim w planie). `order_id` jest pierwszą kolumną unikalnego indeksu, więc nie potrzebuje osobnego.
+  - `UniqueConstraint("order_id", "product_id", name="uq_order_items_order_product")`, so each product appears once per order.
+- Index on `product_id` (plan rows are joined on it). `order_id` is the first column of the unique index, so it does not need its own.
 
-### 1.3 Klucze obce w SQLite (testy)
+### 1.3 Foreign keys in SQLite (tests)
 
-- SQLite domyślnie nie wymusza FK. W `db.py`, dla silnika SQLite, dodać listener `event.listens_for(engine, "connect")`, który wykonuje `PRAGMA foreign_keys=ON`.
-- CHECK i UNIQUE SQLite wymusza bez dodatkowej konfiguracji.
+- SQLite does not enforce foreign keys by default. In `db.py`, for the SQLite engine, add an `event.listens_for(engine, "connect")` listener that runs `PRAGMA foreign_keys=ON`.
+- SQLite enforces CHECK and UNIQUE with no extra configuration.
 
-### 1.4 Migracja
+### 1.4 Migration
 
-- Bez Alembica: tabele tworzy `create_all`. `create_all` nie zmienia istniejących tabel, ale te są nowe, więc powstaną od razu. Czysty start bazy: `docker compose down -v`.
+- No Alembic: `create_all` creates the tables. `create_all` does not alter existing tables, but these are new, so they appear immediately. Clean database start: `docker compose down -v`.
 
 ---
 
-## 2. `POST /orders` (zadanie 2)
+## 2. `POST /orders` (task 2)
 
-**Pliki:** `backend/app/schemas.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (handler błędów i `include_router`).
+**Files:** `backend/app/schemas.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (error handler and `include_router`).
 
-### 2.1 Kontrakt
+### 2.1 Contract
 
-Żądanie:
+Request:
 
 ```json
 {
@@ -112,7 +112,7 @@ Now = Annotated[datetime, Depends(get_now)]
 }
 ```
 
-Odpowiedź `201 Created`: `OrderOut`:
+Response `201 Created`: `OrderOut`:
 
 ```json
 {
@@ -124,42 +124,42 @@ Odpowiedź `201 Created`: `OrderOut`:
 }
 ```
 
-### 2.2 Schematy (Pydantic v2)
+### 2.2 Schemas (Pydantic v2)
 
 - `OrderItemIn`: `product_id: int`, `quantity: int = Field(gt=0)`.
 - `OrderIn`: `store_id: int`, `delivery_date: date`, `items: list[OrderItemIn] = Field(min_length=1)`.
-- `OrderItemOut`, `OrderOut`: `ConfigDict(from_attributes=True)`, tak jak istniejące `*Out`.
-- Zły format JSON, daty lub liczby, `quantity <= 0` i pusta lista `items` dają automatycznie 422 z walidacji FastAPI.
+- `OrderItemOut`, `OrderOut`: `ConfigDict(from_attributes=True)`, same as the existing `*Out`.
+- Bad JSON, date, or number format, `quantity <= 0`, and an empty `items` list automatically return 422 from FastAPI validation.
 
-### 2.3 Czas jako zależność
+### 2.3 Time as a dependency
 
-- `get_now() -> datetime` zwraca `datetime.now(ZoneInfo("Europe/Warsaw"))`.
-- Route przyjmuje `now: Annotated[datetime, Depends(get_now)]`. Testy podmieniają czas przez `app.dependency_overrides[get_now] = lambda: ...`.
+- `get_now() -> datetime` returns `datetime.now(ZoneInfo("Europe/Warsaw"))`.
+- The route takes `now: Annotated[datetime, Depends(get_now)]`. Tests replace the clock with `app.dependency_overrides[get_now] = lambda: ...`.
 
-### 2.4 Logika `create_order(db: Session, payload: OrderIn, now: datetime) -> Order`
+### 2.4 Logic of `create_order(db: Session, payload: OrderIn, now: datetime) -> Order`
 
-Kolejność walidacji. Każda reguła rzuca wyjątek domenowy przed jakimkolwiek zapisem.
+Validation order. Each rule raises a domain exception before any write.
 
-1. **Data dostawy:** `today = now.astimezone(WAW).date()`. Jeśli `delivery_date <= today`, błąd biznesowy "Delivery date must be tomorrow or later". Liczy się data kalendarzowa w Warszawie, a nie data serwera ani UTC.
-2. **Cutoff:** `if not is_before_cutoff(delivery_date, now)` daje błąd "Order deadline passed (14:00 Europe/Warsaw on the previous day)". Wymaga poprawki z sekcji 3.
-3. **Sklep:** `db.get(Store, store_id)`. Jeśli go brak, `NotFoundError`.
-4. **Duplikaty w payloadzie:** jeśli `product_id` powtarza się w `items`, błąd 422 (bez cichego scalania ilości). Odpowiada to ograniczeniu `UNIQUE(order_id, product_id)` w bazie.
-5. **Produkty:** jedno zapytanie `select(Product).where(Product.id.in_(ids))`, bez N+1.
-   - brakujące ID dają `NotFoundError` z listą ID,
-   - nieaktywne produkty dają błąd biznesowy z listą nazw.
-6. **Zapis:** `Order(..., created_at=now, items=[OrderItem(product_id, quantity, unit_price=product.unit_price)])`, potem `db.add`, `db.commit`, `db.refresh`.
+1. **Delivery date:** `today = now.astimezone(WAW).date()`. If `delivery_date <= today`, business error "Delivery date must be tomorrow or later". The Warsaw calendar date counts, not the server date and not UTC.
+2. **Cutoff:** `if not is_before_cutoff(delivery_date, now)` raises "Order deadline passed (14:00 Europe/Warsaw on the previous day)". Requires the fix from section 3.
+3. **Store:** `db.get(Store, store_id)`. If it is missing, `NotFoundError`.
+4. **Duplicates in the payload:** if `product_id` repeats in `items`, 422 (no silent merging of quantities). This matches the `UNIQUE(order_id, product_id)` constraint in the database.
+5. **Products:** one query `select(Product).where(Product.id.in_(ids))`, no N+1.
+   - missing IDs raise `NotFoundError` with the list of IDs,
+   - inactive products raise a business error with the list of names.
+6. **Write:** `Order(..., created_at=now, items=[OrderItem(product_id, quantity, unit_price=product.unit_price)])`, then `db.add`, `db.commit`, `db.refresh`.
 
-**Transakcyjność:** walidacja i zapis odbywają się w jednej sesji i jednym `commit()`. Każdy wyjątek przed commitem oznacza, że w bazie nic nie zostaje. `try/except` z `db.rollback()` zabezpiecza też przed `IntegrityError` z bazy (np. wyścig z dezaktywacją produktu albo naruszenie FK), który mapujemy na 409.
+**Transactions:** validation and the write happen in one session and one `commit()`. Any exception before the commit means nothing is left in the database. `try/except` with `db.rollback()` also covers an `IntegrityError` from the database (for example a race with product deactivation, or a foreign-key violation), which we map to 409.
 
-### 2.5 Błędy domenowe i ich mapowanie
+### 2.5 Domain errors and their mapping
 
-- `errors.py`: `class DomainError(Exception)`, a z niego `NotFoundError` i `BusinessRuleError`. Każdy ma czytelny komunikat.
-- `main.py`: `@app.exception_handler(NotFoundError)` zwraca 404, `BusinessRuleError` zwraca 422 (lub 409, zależnie od decyzji).
-- Ciało błędu ma ten sam format co domyślne błędy FastAPI: `{"detail": "..."}`. Bez stack trace'ów, a nieoczekiwane wyjątki logujemy przez `logging`.
+- `errors.py`: `class DomainError(Exception)`, and from it `NotFoundError` and `BusinessRuleError`. Each has a clear message.
+- `main.py`: `@app.exception_handler(NotFoundError)` returns 404, `BusinessRuleError` returns 422 (or 409, depending on the decision).
+- The error body has the same shape as FastAPI's default errors: `{"detail": "..."}`. No stack traces, and unexpected exceptions are logged with `logging`.
 
 ### 2.6 Route
 
-W `api/orders.py`. `main.py` robi tylko `app.include_router(orders.router)`.
+In `api/orders.py`. `main.py` only does `app.include_router(orders.router)`.
 
 ```python
 router = APIRouter()
@@ -171,27 +171,27 @@ def post_order(payload: OrderIn, db: DbSession, now: Now) -> OrderOut:
 
 ---
 
-## 3. Czerwony test (zadanie 3)
+## 3. Red test (task 3)
 
-**Plik dziś:** `backend/app/cutoff.py`. Poprawka ląduje w `backend/app/clock.py` (patrz układ pakietu), dopiero po Twojej akceptacji. Do czasu przeniesienia diagnoza dotyczy obecnego `cutoff.py`.
+**File today:** `backend/app/cutoff.py`. The fix lands in `backend/app/clock.py` (see the package layout), and only after your approval. Until the move, the diagnosis is about the current `cutoff.py`.
 
-- **Diagnoza (z analizy kodu, jeszcze niepotwierdzona uruchomieniem** `pytest`**):** `cutoff_for` łączy datę z `time(12, 0)` w UTC.
-  - Lato, CEST (UTC+2): 12:00 UTC to 14:00 w Warszawie, więc testy letnie przechodzą.
-  - Zima, CET (UTC+1): 12:00 UTC to 13:00 w Warszawie. Zamówienie z 13:30 jest odrzucane, więc `test_winter_order_before_cutoff_is_accepted` nie przechodzi.
-- **Dlaczego test to wyłapał:** to jedyny test zimowy z godziną między 13:00 a 14:00, czyli w oknie, w którym stały offset UTC daje zły wynik.
-- **Poprawka:** cutoff definiowany w czasie lokalnym:
+- **Diagnosis (from reading the code, not yet confirmed by running** `pytest`**):** `cutoff_for` combines the date with `time(12, 0)` in UTC.
+  - Summer, CEST (UTC+2): 12:00 UTC is 14:00 in Warsaw, so the summer tests pass.
+  - Winter, CET (UTC+1): 12:00 UTC is 13:00 in Warsaw. An order at 13:30 is rejected, so `test_winter_order_before_cutoff_is_accepted` fails.
+- **Why the test caught it:** it is the only winter test with an hour between 13:00 and 14:00, the window where a fixed UTC offset gives the wrong result.
+- **Fix:** define the cutoff in local time:
   - `WARSAW = ZoneInfo("Europe/Warsaw")`, `CUTOFF_TIME = time(14, 0)`,
   - `datetime.combine(order_day, CUTOFF_TIME, tzinfo=WARSAW)`,
-  - porównanie `now < cutoff` (oba datetime'y ze strefą, Python porównuje je jako chwile w czasie).
-- Kontrola `now.tzinfo is None` (`ValueError`) zostaje.
+  - comparison `now < cutoff` (both datetimes are timezone-aware; Python compares them as instants).
+- The `now.tzinfo is None` check (`ValueError`) stays.
 
 ---
 
-## 4. `GET /production-plan?date=YYYY-MM-DD` (zadanie 4)
+## 4. `GET /production-plan?date=YYYY-MM-DD` (task 4)
 
-**Pliki:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/schemas.py`.
+**Files:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/schemas.py`.
 
-### 4.1 Odpowiedź
+### 4.1 Response
 
 ```json
 {
@@ -206,119 +206,125 @@ def post_order(payload: OrderIn, db: DbSession, now: Now) -> OrderOut:
 }
 ```
 
-Schematy: `PlanItemOut`, `PlanCategoryOut`, `ProductionPlanOut`.
+Schemas: `PlanItemOut`, `PlanCategoryOut`, `ProductionPlanOut`.
 
-### 4.2 Zapytanie: jedno, agregacja w SQL
+### 4.2 Query: one query, aggregation in SQL
 
-Docelowy SQL:
+Target SQL:
 
 ```sql
-SELECT p.id, p.name, p.category, COALESCE(SUM(oi.quantity), 0) AS quantity
+SELECT p.id, p.name, p.category, COALESCE(sq.qty, 0) AS quantity
 FROM products p
-LEFT JOIN (order_items oi
-           JOIN orders o ON o.id = oi.order_id AND o.delivery_date = :date)
-       ON oi.product_id = p.id
-GROUP BY p.id, p.name, p.category
+LEFT JOIN (
+    SELECT oi.product_id, SUM(oi.quantity) AS qty
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE o.delivery_date = :date
+    GROUP BY oi.product_id
+) sq ON sq.product_id = p.id
+WHERE p.active OR COALESCE(sq.qty, 0) > 0
 ORDER BY p.category, p.name;
 ```
 
-- Filtr daty jest w `ON`, a nie w `WHERE`. Warunek w `WHERE` zamieniłby `LEFT JOIN` w `INNER JOIN` i usunął produkty bez zamówień.
-- Pozycje zamówień są złączane z zamówieniami **wewnątrz** `LEFT JOIN`, więc każda pozycja pojawia się raz i suma się nie mnoży. Bezpośrednie `products LEFT JOIN orders` bez związku z pozycją mnożyłoby wiersze.
-- W SQLAlchemy: podzapytanie `select(OrderItem.product_id, func.sum(OrderItem.quantity)).join(Order).where(Order.delivery_date == day).group_by(OrderItem.product_id).subquery()`, a potem `select(Product..., func.coalesce(sq.c.qty, 0)).outerjoin(sq, sq.c.product_id == Product.id)`. Agregacja przed złączeniem też wyklucza mnożenie i jest czytelniejsza od zagnieżdżonego `JOIN`.
-- Wybór produktów zależy od decyzji. Rekomendacja: `WHERE p.active OR qty > 0`.
+- **Who appears in the plan.** An active product is always there, with `0` when nobody ordered it that day. An inactive product is there only when it already has lines for that date (`qty > 0`): the product may have been turned off after the order was accepted, and it still has to be baked. An inactive product with no orders for that date is dropped. The seed has two such products on a normal day: "Chleb razowy" and "Rogal z makiem".
+- The date filter is in the subquery (`WHERE` already applies to the join of orders and lines), not in the outer `WHERE` on the join with products. The outer `WHERE p.active OR qty > 0` does not drop active products with zero, because `p.active` stays true when `sq.qty` is `NULL`.
+- The sum is computed in the subquery before products are joined, so the join does not multiply quantities. `COALESCE(sq.qty, 0)` turns a missing row into zero.
+- In SQLAlchemy: subquery `select(OrderItem.product_id, func.sum(OrderItem.quantity).label("qty")).join(Order).where(Order.delivery_date == day).group_by(OrderItem.product_id).subquery()`, then `select(...).outerjoin(...).where(or_(Product.active.is_(True), func.coalesce(sq.c.qty, 0) > 0))`.
 
-### 4.3 Grupowanie i API
+### 4.3 Grouping and the API
 
-- `build_plan(db: Session, day: date) -> ProductionPlanOut` grupuje w Pythonie wiersze już posortowane przez SQL (`itertools.groupby` po `category`) i liczy `total` kategorii. Woła ją tylko route planu.
-- Route w `api/plan.py`: `@router.get("/production-plan", response_model=ProductionPlanOut)` z parametrem `date: Annotated[date, Query()]` i `db: DbSession`. Brak parametru lub zły format daje 422.
+- `build_plan(db: Session, day: date) -> ProductionPlanOut` groups in Python the rows already sorted by SQL (`itertools.groupby` on `category`) and computes each category `total`. Only the plan route calls it.
+- Route in `api/plan.py`: `@router.get("/production-plan", response_model=ProductionPlanOut)` with parameter `date: Annotated[date, Query()]` and `db: DbSession`. A missing parameter or a bad format returns 422.
 
 ---
 
-## 5. Widok "Plan produkcji" w React (zadanie 5)
+## 5. "Plan produkcji" view in React (task 5)
 
-**Pliki:** `frontend/src/api.ts`, nowy `frontend/src/ProductionPlan.tsx`, ewentualnie `frontend/src/PlanCategoryRows.tsx`, `frontend/src/App.tsx`, `frontend/src/index.css`, `frontend/package.json` (`zod`).
+**Files:** `frontend/src/api.ts`, new `frontend/src/ProductionPlan.tsx`, possibly `frontend/src/PlanCategoryRows.tsx`, `frontend/src/App.tsx`, `frontend/src/index.css`, `frontend/package.json` (`zod`).
 
-### 5.1 Warstwa API
+### 5.1 API layer
 
-- `fetchJson<T>(path, schema: z.ZodType<T>, init?)`: `schema.parse(await response.json())`. Niezgodna odpowiedź API kończy się czytelnym błędem, a nie cichym `undefined`.
-- Schematy Zod: `ProductSchema`, `ProductionPlanSchema`, a typy przez `z.infer`. Ręczny typ `Product` zastępuje typ z Zod, a `ProductList` przechodzi na nową sygnaturę.
-- Błąd HTTP: odczyt pola `detail` z ciała odpowiedzi, żeby komunikat był czytelny.
+- `fetchJson<T>(path, schema: z.ZodType<T>, init?)`: `schema.parse(await response.json())`. A response that does not match the API ends in a clear error, not a silent `undefined`.
+- Zod schemas: `ProductSchema`, `ProductionPlanSchema`, and types via `z.infer`. The hand-written `Product` type is replaced by the Zod type, and `ProductList` moves to the new signature.
+- HTTP error: read the `detail` field from the response body so the message is readable.
 
-### 5.2 Komponent `ProductionPlan`
+### 5.2 `ProductionPlan` component
 
-- `<input type="date">`, domyślnie "jutro" według kalendarza w Warszawie (`Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" })` daje `YYYY-MM-DD`).
-- `useEffect` zależny od daty. `AbortController` w cleanupie zapobiega nadpisaniu nowej daty przez spóźnioną starą odpowiedź.
-- Stany:
-  - **ładowanie:** "Ładowanie…",
-  - **błąd:** `<p className="error">` z komunikatem,
-  - **pusty:** wszystkie ilości równe 0 dają komunikat "Brak zamówień na ten dzień" (tabela z zerami może zostać pod spodem).
-- Tabela: wiersz nagłówka kategorii, wiersze produktów (`.num` dla ilości) i wiersz sumy kategorii.
-- Jeden komponent na plik, bez `useMemo`/`useCallback`, bez bibliotek UI.
+- `<input type="date">`, default "tomorrow" on the Warsaw calendar (`Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" })` yields `YYYY-MM-DD`).
+- `useEffect` depends on the date. An `AbortController` in the cleanup stops a late response for the old date from overwriting the new one.
+- States:
+  - **loading:** "Ładowanie…",
+  - **error:** `<p className="error">` with the message,
+  - **empty:** every quantity equal to 0 shows "Brak zamówień na ten dzień" (the table of zeros may stay underneath).
+- Table: a category header row, product rows (`.num` for quantities), and a category total row.
+- One component per file, no `useMemo`/`useCallback`, no UI libraries.
 
 ### 5.3 `App.tsx`
 
-- Nowa sekcja "Plan produkcji" (np. nad "Aktywne produkty").
+- A new "Plan produkcji" section (for example above "Aktywne produkty").
 
 ---
 
-## 6. Testy (zadanie 6)
+## 6. Tests (task 6)
 
-**Pliki:** `backend/tests/test_cutoff.py` (rozszerzenie), nowe `test_orders.py` i `test_production_plan.py`, ewentualnie fixture'y lub helpery w `conftest.py`.
+**Files:** `backend/tests/test_cutoff.py` (extended), new `test_orders.py` and `test_production_plan.py`, possibly fixtures or helpers in `conftest.py`.
 
-### 6.1 Cutoff (funkcja `is_before_cutoff`)
+### 6.1 Cutoff (`is_before_cutoff`)
 
-- Zima: 13:59 przyjęte (istniejący test), 14:00 odrzucone, 14:01 odrzucone.
-- Lato: istniejące testy (13:59, 14:00, 16:30).
-- `now` podane w UTC (np. 12:59 UTC zimą to 13:59 w Warszawie, więc przyjęte).
-- Dni zmiany czasu: dostawa 2027-03-29 (zamówienie 28.03, dzień przejścia na CEST) i 2027-11-01 (zamówienie 31.10, dzień przejścia na CET).
+- Winter: 13:59 accepted (existing test), 14:00 rejected, 14:01 rejected.
+- Summer: existing tests (13:59, 14:00, 16:30).
+- `now` given in UTC (for example 12:59 UTC in winter is 13:59 in Warsaw, so accepted).
+- DST change days: delivery 2027-03-29 (order on 28 March, the switch to CEST) and 2027-11-01 (order on 31 October, the switch to CET).
 
-### 6.2 `POST /orders` (przez `client`, z podmienionym `get_now`)
+### 6.2 `POST /orders` (through `client`, with `get_now` overridden)
 
-- Poprawne zamówienie: 201, `unit_price` równe cenie produktu, wiersze w bazie.
-- `delivery_date` dziś i wczoraj: 422.
-- Po cutoffie (14:00 dnia poprzedniego): 422.
-- Nieaktywny produkt (np. "Chleb razowy"): 422 i **zero** wierszy w `orders` i `order_items` (brak częściowego zapisu).
-- Nieistniejący sklep lub produkt: 404 i brak zapisu.
-- `quantity = 0`, wartość ujemna, puste `items`, zły format daty: 422.
-- Zduplikowany `product_id` w payloadzie: 422.
-- Opcjonalnie test modelu: bezpośredni `OrderItem(quantity=0)` przez `db` rzuca `IntegrityError`, co potwierdza CHECK.
+- A valid order: 201, `unit_price` equal to the product price, rows in the database.
+- `delivery_date` today and yesterday: 422.
+- After the cutoff (14:00 on the previous day): 422.
+- An inactive product (for example "Chleb razowy"): 422 and **zero** rows in `orders` and `order_items` (no partial write).
+- A missing store or product: 404 and no write.
+- `quantity = 0`, a negative value, empty `items`, a bad date format: 422.
+- A duplicated `product_id` in the payload: 422.
+- Optional model test: a direct `OrderItem(quantity=0)` through `db` raises `IntegrityError`, which confirms CHECK.
 
-### 6.3 Plan produkcji
+### 6.3 Production plan
 
-- Kilka sklepów zamawia ten sam produkt: ilości się sumują.
-- Kilka produktów w kilku kategoriach: poprawne grupowanie, kolejność i `total`.
-- Produkty bez zamówień mają `quantity == 0`.
-- Zamówienia na inną datę nie są wliczane.
-- Brak lub zły parametr `date`: 422.
-- Zamówienia wstawiane bezpośrednio przez fixture `db`, żeby testy planu nie zależały od zegara i cutoffu.
+- Several stores order the same product: quantities are summed.
+- Several products in several categories: correct grouping, order, and `total`.
+- An active product with no orders for that date is on the list with `quantity == 0`.
+- An inactive product with no orders for that date (in the seed, "Chleb razowy" and "Rogal z makiem") is absent from the response.
+- An inactive product with an order for that date is on the list with the summed quantity. Rows are inserted directly through `db`, because `POST /orders` will not accept that product.
+- Orders for a different date are not included.
+- A missing or invalid `date` parameter: 422.
+- Orders are inserted directly through the `db` fixture, so plan tests do not depend on the clock or the cutoff.
 
-### 6.4 Ograniczenia
+### 6.4 Limits
 
-- Testy działają na SQLite i nie dowodzą zgodności z PostgreSQL. Zapytanie planu i ograniczenia trzeba sprawdzić ręcznie na Postgresie (`docker compose up --build`, `/docs` lub `curl`).
-
----
-
-## 7. `NOTES.md` (zadanie 7): propozycje treści
-
-Plik uzupełniasz sam. Poniżej tylko propozycje, co może się w nim znaleźć.
-
-- **Jak uruchomić:** `docker compose down -v` po zmianie modelu, nowa zależność frontendu (`zod`). Redis zostaje w compose, ale aplikacja z niego nie korzysta.
-- **Przyczyna czerwonego testu:** stała godzina 12:00 UTC zamiast 14:00 Europe/Warsaw, błąd tylko w CET. Test zimowy z 13:30 trafia w okno 13:00–14:00. Poprawka: `datetime.combine(..., tzinfo=ZoneInfo("Europe/Warsaw"))`.
-- **Jak korzystałem z AI:** narzędzie (Cursor, tryb plan i agent), `AGENTS.md` jako zestaw reguł, przykładowe prompty (np. o tę specyfikację).
-- **Co zweryfikowałem ręcznie:** wynik `pytest` przed poprawką i po niej, zapytanie planu na PostgreSQL, odpowiedzi błędów w `/docs`, widok w przeglądarce (ładowanie, błąd i stan pusty).
-- **Gdzie AI się pomyliło:** np. pierwsza wersja planu miała szkic złączenia `products LEFT JOIN orders` bez związku z pozycją zamówienia, który mnożyłby ilości. Tu wpisujesz własne obserwacje.
-- **Zmiany w szkielecie:** podział na `api/` i `services/`, przeniesienie `cutoff.py` do `clock.py` (import w testach), wyniesienie `/stores` i `/products` z `main.py` do `api/catalog.py`, listener `PRAGMA foreign_keys` dla SQLite, zależność `zod`.
-- **Co dalej:** bonus (eksport planu do CSV jako zadanie w tle na Redis + RQ ze statusem, albo cache planu w Redisie), Alembic, testy na prawdziwym Postgresie (testcontainers), decyzja o unikalności zamówienia na sklep i dzień, edycja i anulowanie zamówień przed cutoffem, autoryzacja sklepów, formularz zamówienia w React.
+- Tests run on SQLite and do not prove PostgreSQL compatibility. The plan query and the constraints have to be checked by hand on Postgres (`docker compose up --build`, `/docs`, or `curl`).
 
 ---
 
-## Kolejność prac
+## 7. `NOTES.md` (task 7): suggested contents
 
-Każdy krok to osobny, mały commit po Twojej akceptacji. Po każdym kroku `docker compose exec backend pytest`, a po zmianach frontendu `npm run build`.
+You fill in the file yourself. Below is only a suggestion of what can go in it.
 
-1. Potwierdzenie czerwonego testu (`pytest`), potem poprawka cutoffu w `cutoff.py` i testy brzegowe. Przeniesienie do `clock.py` dopiero w kroku 2, żeby diff poprawki był czytelny.
-2. Układ pakietu: `errors.py`, `clock.py` (zawartość `cutoff.py` + `get_now`), `api/deps.py`, `api/catalog.py`. Modele `Order` i `OrderItem` oraz `PRAGMA foreign_keys` dla SQLite.
-3. `POST /orders`: schematy, `services/orders.py`, `api/orders.py`, błędy domenowe i testy.
-4. `GET /production-plan`: `build_plan` i testy agregacji.
-5. Frontend: Zod, `ProductionPlan` i stany widoku.
-6. Ręczna weryfikacja na Postgresie i w przeglądarce; materiał do `NOTES.md` uzupełniasz Ty.
+- **How to run:** `docker compose down -v` after a model change, new frontend dependency (`zod`). Redis stays in compose, but the application does not use it.
+- **Cause of the red test:** a fixed 12:00 UTC instead of 14:00 Europe/Warsaw, wrong only in CET. The winter test at 13:30 falls in the 13:00–14:00 window. Fix: `datetime.combine(..., tzinfo=ZoneInfo("Europe/Warsaw"))`.
+- **How I used AI:** the tool (Cursor, plan mode and agent mode), `AGENTS.md` as the rule set, example prompts (for example the one for this specification).
+- **What I checked by hand:** `pytest` before the fix and after it, the plan query on PostgreSQL, error responses in `/docs`, the view in the browser (loading, error, and empty state).
+- **Where AI was wrong:** for example the first version of the plan sketched `products LEFT JOIN orders` with no link to the order line, which would have multiplied quantities. Write your own observations here.
+- **Skeleton changes:** split into `api/` and `services/`, move of `cutoff.py` into `clock.py` (import in tests), move of `/stores` and `/products` from `main.py` to `api/catalog.py`, `PRAGMA foreign_keys` listener for SQLite, `zod` dependency.
+- **What next:** the bonus (plan export to CSV as a background job on Redis + RQ with a status, or a plan cache in Redis), Alembic, tests on real Postgres (testcontainers), the decision about uniqueness of an order per store and day, editing and cancelling orders before the cutoff, store authorization, an order form in React.
+
+---
+
+## Work order
+
+Each step is its own small commit after your approval. After each step, `docker compose exec backend pytest`, and after frontend changes, `npm run build`.
+
+1. Confirm the red test (`pytest`), then the cutoff fix in `cutoff.py` and the boundary tests. The move to `clock.py` waits until step 2, so the fix diff stays readable.
+2. Package layout: `errors.py`, `clock.py` (contents of `cutoff.py` plus `get_now`), `api/deps.py`, `api/catalog.py`. `Order` and `OrderItem` models and `PRAGMA foreign_keys` for SQLite.
+3. `POST /orders`: schemas, `services/orders.py`, `api/orders.py`, domain errors, and tests.
+4. `GET /production-plan`: `build_plan` and aggregation tests.
+5. Frontend: Zod, `ProductionPlan`, and view states.
+6. Manual check on Postgres and in the browser; you fill in the material for `NOTES.md`.

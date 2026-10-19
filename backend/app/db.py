@@ -1,7 +1,7 @@
 import os
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -13,11 +13,19 @@ DATABASE_URL = os.getenv(
 def _make_engine(url: str):
     if url.startswith("sqlite"):
         # Używane w testach: jedna współdzielona baza w pamięci.
-        return create_engine(
+        sqlite_engine = create_engine(
             url,
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+
+        @event.listens_for(sqlite_engine, "connect")
+        def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        return sqlite_engine
     return create_engine(url, pool_pre_ping=True)
 
 
