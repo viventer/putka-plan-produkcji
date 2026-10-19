@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from app.clock import WARSAW
 
 
 class StoreOut(BaseModel):
@@ -48,3 +50,13 @@ class OrderOut(BaseModel):
     delivery_date: date
     created_at: datetime
     items: list[OrderItemOut]
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, created_at: datetime) -> str:
+        # Postgres returns timestamptz in UTC. SQLite drops the offset and
+        # keeps the Warsaw wall time. The response always uses Warsaw.
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=WARSAW)
+        else:
+            created_at = created_at.astimezone(WARSAW)
+        return created_at.isoformat()

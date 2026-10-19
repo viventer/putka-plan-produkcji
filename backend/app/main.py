@@ -1,15 +1,22 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.orders import router as orders_router
 from app.db import Base, SessionLocal, engine, get_db
+from app.errors import BusinessRuleError, NotFoundError
 from app.models import Product, Store
 from app.schemas import ProductOut, StoreOut
 from app.seed import seed
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -30,6 +37,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(orders_router)
+
+
+@app.exception_handler(NotFoundError)
+def not_found_handler(_request: Request, exc: NotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(BusinessRuleError)
+def business_rule_handler(_request: Request, exc: BusinessRuleError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(IntegrityError)
+def integrity_error_handler(_request: Request, _exc: IntegrityError) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "Order could not be saved due to a data conflict"},
+    )
+
+
+@app.exception_handler(Exception)
+def unhandled_error_handler(_request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error", exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.get("/health")
