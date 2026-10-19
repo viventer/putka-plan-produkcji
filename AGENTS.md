@@ -6,6 +6,7 @@
 - When I ask about an approach, explain the problem and options first; do not jump to code.
 - Separate verified facts from assumptions. Never claim a check passed unless you ran it; report what was not verified.
 - Reply in Polish; keep code, identifiers and comments in English.
+- Don't edit anything in NOTES.md
 
 ## Project
 
