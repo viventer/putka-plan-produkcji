@@ -6,9 +6,9 @@ os.environ["DATABASE_URL"] = "sqlite://"
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.db import Base, SessionLocal, engine  # noqa: E402
+from app.db.db import Base, SessionLocal, engine  # noqa: E402
+from app.db.seed import seed  # noqa: E402
 from app.main import app  # noqa: E402
-from app.seed import seed  # noqa: E402
 
 
 @pytest.fixture

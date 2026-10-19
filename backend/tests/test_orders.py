@@ -5,8 +5,8 @@ import pytest
 from sqlalchemy import func, select
 
 from app.clock import get_now
+from app.db.models import Order, OrderItem, Product, Store
 from app.main import app
-from app.models import Order, OrderItem, Product, Store
 
 WAW = ZoneInfo("Europe/Warsaw")
 DATE_ERROR = "Delivery date must be tomorrow or later"

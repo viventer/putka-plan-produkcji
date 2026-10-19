@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.deps import DbSession, Now
-from app.schemas import OrderIn, OrderOut
+from app.db.schemas import OrderIn, OrderOut
 from app.services.orders import create_order
 
 router = APIRouter()

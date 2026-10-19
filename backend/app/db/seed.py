@@ -3,7 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Product, Store
+from app.db.models import Product, Store
 
 STORES = [
     ("Putka Mokotów", "ul. Puławska 45, 02-508 Warszawa"),

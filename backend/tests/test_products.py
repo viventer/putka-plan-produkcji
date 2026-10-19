@@ -17,7 +17,7 @@ def test_stores(client):
 
 
 def test_seed_is_idempotent(db, client):
-    from app.seed import seed
+    from app.db.seed import seed
 
     seed(db)
     seed(db)

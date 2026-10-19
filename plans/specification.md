@@ -29,10 +29,11 @@ Today everything sits side by side in the directory: routes, models, schemas, se
 ```text
 backend/app/
   main.py            # app, lifespan, CORS, error handlers, include_router
-  db.py              # engine, SessionLocal, Base, get_db
-  models.py          # Store, Product, Order, OrderItem
-  schemas.py         # all *In and *Out
-  seed.py
+  db/
+    db.py            # engine, SessionLocal, Base, get_db
+    models.py        # Store, Product, Order, OrderItem
+    schemas.py       # all *In and *Out
+    seed.py
   errors.py          # DomainError, NotFoundError, BusinessRuleError
   clock.py           # Europe/Warsaw, get_now, cutoff_for, is_before_cutoff
   api/
@@ -48,6 +49,7 @@ backend/app/
 - **Routes stay thin.** `APIRouter` has no prefix, so the paths remain `/orders` and `/production-plan`. A router only accepts a schema, calls a function from `services/`, and returns `*Out`.
 - **Logic does not import FastAPI.** `services/` receives a `Session`, the payload, and `now`. Tests can call `create_order` and `build_plan` without HTTP, and endpoint tests still go through `client`.
 - **Models and schemas each stay in one file.** There are few of them, and the plan and orders use the same classes. A package per domain would be the same files plus imports in a circle.
+- **Database modules live in** `db/`. Imports use the full path: `app.db.db`, `app.db.models`, `app.db.schemas`, `app.db.seed`.
 - **Time lives in** `clock.py`. `cutoff.py` moves there in full (the section 3 fix plus `get_now`). Tests change the import from `app.cutoff` to `app.clock`. A separate `clock.py` next to `cutoff.py` would duplicate the time zone.
 - `create_all` **sees the new tables.** `main.py` imports the routers when the module loads, routers import services, services import models. `Order` and `OrderItem` are then registered on `Base` before `lifespan` calls `create_all`.
 - **What we do not do:** a repository layer, a package per table, Alembic.
@@ -65,7 +67,7 @@ Now = Annotated[datetime, Depends(get_now)]
 
 ## 1. Order model (task 1)
 
-**Files:** `backend/app/models.py`, `backend/app/db.py`
+**Files:** `backend/app/db/models.py`, `backend/app/db/db.py`
 
 ### 1.1 Table `orders` (`Order`)
 
@@ -98,7 +100,7 @@ Now = Annotated[datetime, Depends(get_now)]
 
 ## 2. `POST /orders` (task 2)
 
-**Files:** `backend/app/schemas.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (error handler and `include_router`).
+**Files:** `backend/app/db/schemas.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (error handler and `include_router`).
 
 ### 2.1 Contract
 
@@ -189,7 +191,7 @@ def post_order(payload: OrderIn, db: DbSession, now: Now) -> OrderOut:
 
 ## 4. `GET /production-plan?date=YYYY-MM-DD` (task 4)
 
-**Files:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/schemas.py`.
+**Files:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/db/schemas.py`.
 
 ### 4.1 Response
 

@@ -2,7 +2,7 @@
 
 HTTP contract for the endpoints required by [specification.md](specification.md) (tasks 1–7). Paths have no prefix. The bonus (CSV export or a Redis cache) is not part of this API.
 
-`OrderIn` and `OrderOut` already exist in `backend/app/schemas.py`. `PlanItemOut`, `PlanCategoryOut`, and `ProductionPlanOut` are still to be added. The routes themselves are not implemented yet.
+`OrderIn` and `OrderOut` already exist in `backend/app/db/schemas.py`. `PlanItemOut`, `PlanCategoryOut`, and `ProductionPlanOut` are still to be added. The routes themselves are not implemented yet.
 
 ## 1. Shared rules
 
@@ -71,7 +71,7 @@ Response `200`: `list[ProductOut]`, only `active` products, ordered by `category
 
 Creates one order for one store and one delivery date. A store may place several orders for the same day: there is no `UNIQUE(store_id, delivery_date)`. There is no edit or cancel endpoint.
 
-**Files:** `services/orders.py` (`create_order`), `api/orders.py`, schemas in `schemas.py`.
+**Files:** `services/orders.py` (`create_order`), `api/orders.py`, schemas in `db/schemas.py`.
 
 ### Request
 
@@ -147,7 +147,7 @@ Validation and the insert share one session and one `commit()`. An exception bef
 
 Returns how many pieces to bake for one delivery date, grouped by category.
 
-**Files:** `services/plan.py` (`build_plan`), `api/plan.py`, schemas in `schemas.py`.
+**Files:** `services/plan.py` (`build_plan`), `api/plan.py`, schemas in `db/schemas.py`.
 
 ### Query
 

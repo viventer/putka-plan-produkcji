@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Order, OrderItem, Product, Store
+from app.db.models import Order, OrderItem, Product, Store
 
 WARSAW = ZoneInfo("Europe/Warsaw")
 

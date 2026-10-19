@@ -10,11 +10,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.orders import router as orders_router
-from app.db import Base, SessionLocal, engine, get_db
+from app.db.db import Base, SessionLocal, engine, get_db
+from app.db.models import Product, Store
+from app.db.schemas import ProductOut, StoreOut
+from app.db.seed import seed
 from app.errors import BusinessRuleError, NotFoundError
-from app.models import Product, Store
-from app.schemas import ProductOut, StoreOut
-from app.seed import seed
 
 logger = logging.getLogger(__name__)
 
