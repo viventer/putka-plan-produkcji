@@ -1,26 +1,10 @@
+import datetime as dt
 from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.clock import WARSAW
-
-
-class StoreOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    address: str
-
-
-class ProductOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    category: str
-    unit_price: Decimal
 
 
 class OrderItemIn(BaseModel):
@@ -60,3 +44,20 @@ class OrderOut(BaseModel):
         else:
             created_at = created_at.astimezone(WARSAW)
         return created_at.isoformat()
+
+
+class PlanItemOut(BaseModel):
+    product_id: int
+    name: str
+    quantity: int
+
+
+class PlanCategoryOut(BaseModel):
+    category: str
+    total: int
+    items: list[PlanItemOut]
+
+
+class ProductionPlanOut(BaseModel):
+    date: dt.date
+    categories: list[PlanCategoryOut]

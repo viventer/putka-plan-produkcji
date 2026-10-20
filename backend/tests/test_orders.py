@@ -5,7 +5,8 @@ import pytest
 from sqlalchemy import func, select
 
 from app.clock import get_now
-from app.db.models import Order, OrderItem, Product, Store
+from app.db.models.order import Order, OrderItem
+from app.db.models.product import Product, Store
 from app.main import app
 
 WAW = ZoneInfo("Europe/Warsaw")

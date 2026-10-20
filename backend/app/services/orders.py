@@ -7,8 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.clock import WARSAW, is_before_cutoff
-from app.db.models import Order, OrderItem, Product, Store
-from app.db.schemas import OrderIn
+from app.db.models.order import Order, OrderItem
+from app.db.models.product import Product, Store
+from app.db.schemas.order import OrderIn
 from app.errors import BusinessRuleError, NotFoundError
 
 logger = logging.getLogger(__name__)

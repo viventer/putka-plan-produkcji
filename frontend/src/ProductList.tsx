@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchJson, type Product } from "./api";
+import { fetchJson } from "./api";
+import type { Product } from "./schemas/product";
 
 export default function ProductList() {
   const [products, setProducts] = useState<Product[]>([]);
