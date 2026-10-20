@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.orders import router as orders_router
+from app.api.plan import router as plan_router
 from app.db.db import Base, SessionLocal, engine, get_db
 from app.db.models.product import Product, Store
 from app.db.schemas.product import ProductOut, StoreOut
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(orders_router)
+app.include_router(plan_router)
 
 
 @app.exception_handler(NotFoundError)
