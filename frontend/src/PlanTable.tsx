@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 
-import type { ProductionPlan } from "./schemas/order";
+import type { ProductionPlan } from "./schemas/plan";
 
 export default function PlanTable({ plan }: { plan: ProductionPlan }) {
   const grandTotal = plan.categories.reduce((sum, category) => sum + category.total, 0);

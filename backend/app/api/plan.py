@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 from pydantic import BeforeValidator
 
 from app.api.deps import DbSession
-from app.db.schemas.order import ProductionPlanOut
+from app.db.schemas.plan import ProductionPlanOut
 from app.services.plan import build_plan
 
 router = APIRouter()

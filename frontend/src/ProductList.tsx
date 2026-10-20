@@ -4,18 +4,34 @@ import { z } from "zod";
 import { fetchJson } from "./api";
 import { ProductSchema, type Product } from "./schemas/product";
 
+function formatPrice(value: string): string {
+  const [whole, fraction = ""] = value.split(".");
+  const cents = fraction.length >= 2 ? fraction : fraction.padEnd(2, "0");
+  return `${whole}.${cents} zł`;
+}
+
 export default function ProductList() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchJson("/products", z.array(ProductSchema))
-      .then(setProducts)
+    const controller = new AbortController();
+
+    fetchJson("/products", z.array(ProductSchema), { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setProducts(data);
+      })
       .catch((e: unknown) => {
+        if (controller.signal.aborted) return;
         setError(e instanceof Error ? e.message : "Nieznany błąd");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, []);
 
   if (loading) return <p>Ładowanie…</p>;
@@ -36,7 +52,7 @@ export default function ProductList() {
           <tr key={p.id}>
             <td>{p.name}</td>
             <td>{p.category}</td>
-            <td className="num">{Number(p.unit_price).toFixed(2)} zł</td>
+            <td className="num">{formatPrice(p.unit_price)}</td>
           </tr>
         ))}
       </tbody>

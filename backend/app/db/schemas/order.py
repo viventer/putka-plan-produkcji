@@ -1,4 +1,3 @@
-import datetime as dt
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -44,20 +43,3 @@ class OrderOut(BaseModel):
         else:
             created_at = created_at.astimezone(WARSAW)
         return created_at.isoformat()
-
-
-class PlanItemOut(BaseModel):
-    product_id: int
-    name: str
-    quantity: int
-
-
-class PlanCategoryOut(BaseModel):
-    category: str
-    total: int
-    items: list[PlanItemOut]
-
-
-class ProductionPlanOut(BaseModel):
-    date: dt.date
-    categories: list[PlanCategoryOut]

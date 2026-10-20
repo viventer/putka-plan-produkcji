@@ -2,7 +2,7 @@
 
 HTTP contract for the endpoints required by [specification.md](specification.md) (tasks 1–7). Paths have no prefix. The bonus (CSV export or a Redis cache) is not part of this API.
 
-`OrderIn` and `OrderOut` already exist in `backend/app/db/schemas.py`. `PlanItemOut`, `PlanCategoryOut`, and `ProductionPlanOut` are still to be added. The routes themselves are not implemented yet.
+`OrderIn` and `OrderOut` live in `backend/app/db/schemas/order.py`. `PlanItemOut`, `PlanCategoryOut`, and `ProductionPlanOut` live in `backend/app/db/schemas/plan.py`. `POST /orders` is `api/orders.py`, `GET /production-plan` is `api/plan.py`. `GET /stores` and `GET /products` stay in `main.py`.
 
 ## 1. Shared rules
 
@@ -37,7 +37,7 @@ The frontend has to read both shapes: a string `detail` for domain errors, and a
 
 ## 2. Existing catalog
 
-These routes already exist in `backend/app/main.py`. The contract does not change. They move to `api/catalog.py`.
+These routes live in `backend/app/main.py`. The contract does not change.
 
 ### `GET /health`
 
@@ -71,7 +71,7 @@ Response `200`: `list[ProductOut]`, only `active` products, ordered by `category
 
 Creates one order for one store and one delivery date. A store may place several orders for the same day: there is no `UNIQUE(store_id, delivery_date)`. There is no edit or cancel endpoint.
 
-**Files:** `services/orders.py` (`create_order`), `api/orders.py`, schemas in `db/schemas.py`.
+**Files:** `services/orders.py` (`create_order`), `api/orders.py`, schemas in `db/schemas/order.py`.
 
 ### Request
 
@@ -147,7 +147,7 @@ Validation and the insert share one session and one `commit()`. An exception bef
 
 Returns how many pieces to bake for one delivery date, grouped by category.
 
-**Files:** `services/plan.py` (`build_plan`), `api/plan.py`, schemas in `db/schemas.py`.
+**Files:** `services/plan.py` (`build_plan`), `api/plan.py`, schemas in `db/schemas/plan.py`.
 
 ### Query
 
@@ -237,9 +237,9 @@ The query uses the index on `orders.delivery_date` and the index on `order_items
 | Endpoint | Route | Logic | Schemas |
 | --- | --- | --- | --- |
 | `GET /health` | `main.py` | none | inline `dict[str, str]` |
-| `GET /stores`, `GET /products` | `api/catalog.py` (moved from `main.py`) | query in the route, as today | `StoreOut`, `ProductOut` (present) |
-| `POST /orders` | `api/orders.py` | `services/orders.py` `create_order` | `OrderIn`, `OrderItemIn`, `OrderOut`, `OrderItemOut` (present) |
-| `GET /production-plan` | `api/plan.py` | `services/plan.py` `build_plan` | `ProductionPlanOut`, `PlanCategoryOut`, `PlanItemOut` (missing) |
+| `GET /stores`, `GET /products` | `main.py` | query in the route, as today | `StoreOut`, `ProductOut` in `db/schemas/product.py` |
+| `POST /orders` | `api/orders.py` | `services/orders.py` `create_order` | `OrderIn`, `OrderItemIn`, `OrderOut`, `OrderItemOut` in `db/schemas/order.py` |
+| `GET /production-plan` | `api/plan.py` | `services/plan.py` `build_plan` | `ProductionPlanOut`, `PlanCategoryOut`, `PlanItemOut` in `db/schemas/plan.py` |
 
 Shared pieces: `errors.py` (`DomainError`, `NotFoundError`, `BusinessRuleError`), exception handlers in `main.py`, and `clock.py` (`get_now`, `cutoff_for`, `is_before_cutoff`). `api/deps.py` defines `DbSession` and `Now`.
 

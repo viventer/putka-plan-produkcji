@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.order import Order, OrderItem
 from app.db.models.product import Product
-from app.db.schemas.order import PlanCategoryOut, PlanItemOut, ProductionPlanOut
+from app.db.schemas.plan import PlanCategoryOut, PlanItemOut, ProductionPlanOut
 
 
 def build_plan(db: Session, day: date) -> ProductionPlanOut:

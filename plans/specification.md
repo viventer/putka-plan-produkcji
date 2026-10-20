@@ -5,6 +5,8 @@ The bonus (background CSV export or a Redis cache) is out of scope.
 
 ## 0. Starting point (checked in the code)
 
+The list below is the skeleton before these changes. The current files are in "Package layout".
+
 - `backend/app/models.py`: only `Store` and `Product` (`active`, `unit_price: Numeric(10, 2)`, `category` with an index). No order tables.
 - `backend/app/main.py`: `/health`, `/stores`, `/products`. Endpoints are synchronous (`def`), session via `db: Session = Depends(get_db)` (no `Annotated`).
 - `backend/app/cutoff.py`: `CUTOFF_TIME_UTC = time(12, 0)`, a fixed hour in UTC.
@@ -28,17 +30,22 @@ Today everything sits side by side in the directory: routes, models, schemas, se
 
 ```text
 backend/app/
-  main.py            # app, lifespan, CORS, error handlers, include_router
+  main.py            # app, lifespan, CORS, error handlers, include_router,
+                     # GET /health, GET /stores, GET /products
   db/
     db.py            # engine, SessionLocal, Base, get_db
-    models.py        # Store, Product, Order, OrderItem
-    schemas.py       # all *In and *Out
+    models/
+      product.py     # Store, Product
+      order.py       # Order, OrderItem
+    schemas/
+      product.py     # StoreOut, ProductOut
+      order.py       # OrderIn, OrderItemIn, OrderOut, OrderItemOut
+      plan.py        # PlanItemOut, PlanCategoryOut, ProductionPlanOut
     seed.py
   errors.py          # DomainError, NotFoundError, BusinessRuleError
   clock.py           # Europe/Warsaw, get_now, cutoff_for, is_before_cutoff
   api/
     deps.py          # DbSession and Now: Annotated[..., Depends(...)] aliases
-    catalog.py       # GET /stores, GET /products (moved out of main.py)
     orders.py        # POST /orders
     plan.py          # GET /production-plan
   services/
@@ -46,10 +53,10 @@ backend/app/
     plan.py          # build_plan
 ```
 
-- **Routes stay thin.** `APIRouter` has no prefix, so the paths remain `/orders` and `/production-plan`. A router only accepts a schema, calls a function from `services/`, and returns `*Out`.
+- **Routes stay thin.** `APIRouter` has no prefix, so the paths remain `/orders` and `/production-plan`. A router only accepts a schema, calls a function from `services/`, and returns `*Out`. `GET /health`, `GET /stores`, and `GET /products` stay in `main.py`.
 - **Logic does not import FastAPI.** `services/` receives a `Session`, the payload, and `now`. Tests can call `create_order` and `build_plan` without HTTP, and endpoint tests still go through `client`.
-- **Models and schemas each stay in one file.** There are few of them, and the plan and orders use the same classes. A package per domain would be the same files plus imports in a circle.
-- **Database modules live in** `db/`. Imports use the full path: `app.db.db`, `app.db.models`, `app.db.schemas`, `app.db.seed`.
+- **Models and schemas are split by what they describe.** `models/product.py` holds `Store` and `Product`, `models/order.py` holds `Order` and `OrderItem`. Order payloads live in `schemas/order.py`, and the production plan lives in `schemas/plan.py`, because a plan is not an order. The package `__init__.py` files do not re-export those names. Callers import the module: `app.db.models.order`, `app.db.schemas.plan`.
+- **Database modules live in** `db/`. Imports use the full path: `app.db.db`, `app.db.models.product`, `app.db.models.order`, `app.db.schemas.product`, `app.db.schemas.order`, `app.db.schemas.plan`, `app.db.seed`.
 - **Time lives in** `clock.py`. `cutoff.py` moves there in full (the section 3 fix plus `get_now`). Tests change the import from `app.cutoff` to `app.clock`. A separate `clock.py` next to `cutoff.py` would duplicate the time zone.
 - `create_all` **sees the new tables.** `main.py` imports the routers when the module loads, routers import services, services import models. `Order` and `OrderItem` are then registered on `Base` before `lifespan` calls `create_all`.
 - **What we do not do:** a repository layer, a package per table, Alembic.
@@ -67,7 +74,7 @@ Now = Annotated[datetime, Depends(get_now)]
 
 ## 1. Order model (task 1)
 
-**Files:** `backend/app/db/models.py`, `backend/app/db/db.py`
+**Files:** `backend/app/db/models/order.py`, `backend/app/db/db.py`
 
 ### 1.1 Table `orders` (`Order`)
 
@@ -100,7 +107,7 @@ Now = Annotated[datetime, Depends(get_now)]
 
 ## 2. `POST /orders` (task 2)
 
-**Files:** `backend/app/db/schemas.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (error handler and `include_router`).
+**Files:** `backend/app/db/schemas/order.py`, `backend/app/services/orders.py`, `backend/app/errors.py`, `backend/app/api/orders.py`, `backend/app/api/deps.py`, `backend/app/clock.py` (`get_now`), `backend/app/main.py` (error handler and `include_router`).
 
 ### 2.1 Contract
 
@@ -191,7 +198,7 @@ def post_order(payload: OrderIn, db: DbSession, now: Now) -> OrderOut:
 
 ## 4. `GET /production-plan?date=YYYY-MM-DD` (task 4)
 
-**Files:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/db/schemas.py`.
+**Files:** `backend/app/services/plan.py`, `backend/app/api/plan.py`, `backend/app/db/schemas/plan.py`.
 
 ### 4.1 Response
 
@@ -315,7 +322,7 @@ You fill in the file yourself. Below is only a suggestion of what can go in it.
 - **How I used AI:** the tool (Cursor, plan mode and agent mode), `AGENTS.md` as the rule set, example prompts (for example the one for this specification).
 - **What I checked by hand:** `pytest` before the fix and after it, the plan query on PostgreSQL, error responses in `/docs`, the view in the browser (loading, error, and empty state).
 - **Where AI was wrong:** for example the first version of the plan sketched `products LEFT JOIN orders` with no link to the order line, which would have multiplied quantities. Write your own observations here.
-- **Skeleton changes:** split into `api/` and `services/`, move of `cutoff.py` into `clock.py` (import in tests), move of `/stores` and `/products` from `main.py` to `api/catalog.py`, `PRAGMA foreign_keys` listener for SQLite, `zod` dependency.
+- **Skeleton changes:** split into `api/` and `services/`, move of `cutoff.py` into `clock.py` (import in tests), models in `db/models/` and schemas in `db/schemas/` (plan schemas in `schemas/plan.py`), `GET /stores` and `GET /products` left in `main.py`, `PRAGMA foreign_keys` listener for SQLite, `zod` dependency.
 - **What next:** the bonus (plan export to CSV as a background job on Redis + RQ with a status, or a plan cache in Redis), Alembic, tests on real Postgres (testcontainers), the decision about uniqueness of an order per store and day, editing and cancelling orders before the cutoff, store authorization, an order form in React.
 
 ---
@@ -325,7 +332,7 @@ You fill in the file yourself. Below is only a suggestion of what can go in it.
 Each step is its own small commit after your approval. After each step, `docker compose exec backend pytest`, and after frontend changes, `npm run build`.
 
 1. Confirm the red test (`pytest`), then the cutoff fix in `cutoff.py` and the boundary tests. The move to `clock.py` waits until step 2, so the fix diff stays readable.
-2. Package layout: `errors.py`, `clock.py` (contents of `cutoff.py` plus `get_now`), `api/deps.py`, `api/catalog.py`. `Order` and `OrderItem` models and `PRAGMA foreign_keys` for SQLite.
+2. Package layout: `errors.py`, `clock.py` (contents of `cutoff.py` plus `get_now`), `api/deps.py`. `GET /stores` and `GET /products` stay in `main.py`. `Order` and `OrderItem` models and `PRAGMA foreign_keys` for SQLite.
 3. `POST /orders`: schemas, `services/orders.py`, `api/orders.py`, domain errors, and tests.
 4. `GET /production-plan`: `build_plan` and aggregation tests.
 5. Frontend: Zod, `ProductionPlan`, and view states.

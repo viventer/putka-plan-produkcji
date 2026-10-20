@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchJson } from "./api";
 import { addDays, tomorrowInWarsaw } from "./dates";
 import PlanTable from "./PlanTable";
-import { ProductionPlanSchema, type ProductionPlan as Plan } from "./schemas/order";
+import { ProductionPlanSchema, type ProductionPlan as Plan } from "./schemas/plan";
 
 export default function ProductionPlan() {
   const [date, setDate] = useState(tomorrowInWarsaw);
@@ -38,7 +38,6 @@ export default function ProductionPlan() {
 
   function selectDate(next: string) {
     setDate(next);
-    setError(null);
   }
 
   const current = plan !== null && plan.date === date ? plan : null;
