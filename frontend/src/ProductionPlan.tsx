@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { fetchJson } from "./api";
 import { addDays, tomorrowInWarsaw } from "./dates";
 import PlanTable from "./PlanTable";
-import { ProductionPlanSchema, type ProductionPlan as Plan } from "./schemas/plan";
+import {
+  ProductionPlanSchema,
+  type ProductionPlan as Plan,
+} from "./schemas/plan";
 
 export default function ProductionPlan() {
   const [date, setDate] = useState(tomorrowInWarsaw);
@@ -44,22 +47,36 @@ export default function ProductionPlan() {
   const noOrders =
     current !== null &&
     current.categories.length > 0 &&
-    current.categories.every((category) => category.items.every((item) => item.quantity === 0));
+    current.categories.every((category) =>
+      category.items.every((item) => item.quantity === 0),
+    );
 
   return (
     <>
       <div className="toolbar">
         <label>
           Data dostawy{" "}
-          <input type="date" value={date} onChange={(event) => selectDate(event.target.value)} />
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => selectDate(event.target.value)}
+          />
         </label>
-        <button type="button" onClick={() => selectDate(addDays(date, -1))} disabled={date === ""}>
+        <button
+          type="button"
+          onClick={() => selectDate(addDays(date, -1))}
+          disabled={date === ""}
+        >
           Poprzedni dzień
         </button>
         <button type="button" onClick={() => selectDate(tomorrowInWarsaw())}>
           Jutro
         </button>
-        <button type="button" onClick={() => selectDate(addDays(date, 1))} disabled={date === ""}>
+        <button
+          type="button"
+          onClick={() => selectDate(addDays(date, 1))}
+          disabled={date === ""}
+        >
           Następny dzień
         </button>
       </div>
