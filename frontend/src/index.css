@@ -28,6 +28,50 @@ h1 {
   color: #6b5a4b;
 }
 
+section + section {
+  margin-top: 2.5rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar button {
+  font: inherit;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #eadfd2;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.toolbar button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.category-row th {
+  background: #e4d3c0;
+}
+
+.total-row td {
+  font-weight: 600;
+}
+
+.zero td {
+  color: #9a8b7c;
+}
+
+.empty {
+  margin: 0 0 0.75rem;
+  color: #6b5a4b;
+  font-weight: 600;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
