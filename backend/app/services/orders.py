@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,23 +17,38 @@ logger = logging.getLogger(__name__)
 
 def create_order(db: Session, payload: OrderIn, now: datetime) -> Order:
     """Validate one order and insert it. Raises before any write on failure."""
+    _validate_order_window(payload.delivery_date, now)
+    products = _load_order_catalog(
+        db,
+        payload.store_id,
+        [item.product_id for item in payload.items],
+    )
+    return _insert_order(db, payload, products, now)
+
+
+def _validate_order_window(delivery_date: date, now: datetime) -> None:
+    """Reject a delivery date that is not still open for ordering."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
 
     today = now.astimezone(WARSAW).date()
-    if payload.delivery_date <= today:
+    if delivery_date <= today:
         raise BusinessRuleError("Delivery date must be tomorrow or later")
 
-    if not is_before_cutoff(payload.delivery_date, now):
+    if not is_before_cutoff(delivery_date, now):
         raise BusinessRuleError(
             "Order deadline passed (14:00 Europe/Warsaw on the previous day)"
         )
 
-    store = db.get(Store, payload.store_id)
-    if store is None:
-        raise NotFoundError(f"Store {payload.store_id} does not exist")
 
-    product_ids = [item.product_id for item in payload.items]
+def _load_order_catalog(
+    db: Session, store_id: int, product_ids: list[int]
+) -> dict[int, Product]:
+    """Load the store and the active products. No writes."""
+    store = db.get(Store, store_id)
+    if store is None:
+        raise NotFoundError(f"Store {store_id} does not exist")
+
     duplicated = sorted(
         product_id for product_id, count in Counter(product_ids).items() if count > 1
     )
@@ -56,6 +71,16 @@ def create_order(db: Session, payload: OrderIn, now: datetime) -> Order:
     if inactive:
         raise BusinessRuleError(f"Inactive products: {', '.join(inactive)}")
 
+    return by_id
+
+
+def _insert_order(
+    db: Session,
+    payload: OrderIn,
+    products: dict[int, Product],
+    now: datetime,
+) -> Order:
+    """Insert the order and its items. unit_price is copied from the product."""
     order = Order(
         store_id=payload.store_id,
         delivery_date=payload.delivery_date,
@@ -64,7 +89,7 @@ def create_order(db: Session, payload: OrderIn, now: datetime) -> Order:
             OrderItem(
                 product_id=item.product_id,
                 quantity=item.quantity,
-                unit_price=by_id[item.product_id].unit_price,
+                unit_price=products[item.product_id].unit_price,
             )
             for item in payload.items
         ],
