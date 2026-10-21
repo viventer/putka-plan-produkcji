@@ -8,7 +8,7 @@
 
 ## Przyczyna czerwonego testu
 
-- Co było źle:cutoff był ustawiony na 12:00 UTC. Latem to wypada o 14:00 w Warszawie, więc testy letnie przechodziły. Zimą Polska jest UTC+1, więc 12:00 UTC to 13:00 w Warszawie i zamówienie o 13:30 było po terminie.
+- Co było źle: cutoff był ustawiony na 12:00 UTC. Latem to wypada o 14:00 w Warszawie, więc testy letnie przechodziły. Zimą Polska jest UTC+1, więc 12:00 UTC to 13:00 w Warszawie i zamówienie o 13:30 było po terminie.
 - Dlaczego test to wyłapał: zimowy test składa zamówienie 14 stycznia o 13:30 na dostawę następnego dnia. To jedyny przypadek między 13:00 a 14:00, czyli tam, gdzie stała godzina UTC daje zły wynik.
 - Jak to naprawiłeś/aś: termin liczę jako 14:00 czasu warszawskiego dnia przed dostawą (`ZoneInfo("Europe/Warsaw")`). Przyjmuję tylko to, co jest wcześniejsze niż ta godzina, więc równo 14:00 też odpada. Działa tak samo zimą i latem. Kod jest w `clock.py`.
 
@@ -48,6 +48,7 @@ Podobnie w przypadku konieczności zmiany planów określonych we wcześniej wsp
 - Brakowało polityki CORS zezwalającej na wysyłanie zapytań z frontendu porcie 5174.
 - AI zaproponowało płaską strukturę plików na backendzie, określiłem lepszy podział.
 - Schematy planu produkcji znalazły sie w pliku order.py, wydzieliłem je do osobnego plan.py.
+- Rozdzielenie funkcji create_order i build_plan na mniejsze, wykonujące jedno zadanie.
 
 ## Co dalej przy większej ilości czasu
 
